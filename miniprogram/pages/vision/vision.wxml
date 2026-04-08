@@ -1,0 +1,34 @@
+<!-- 1. 全屏相机层 -->
+<camera
+  device-position="back"
+  flash="off"
+  style="width: 100%; height: 100vh; position: fixed; top: 0; left: 0; z-index: 0;"
+></camera>
+
+<!-- 2. 悬浮 UI 层 -->
+<view class="ui-container">
+  <!-- 顶部导航栏 (修复了安全区问题) -->
+  <view class="top-bar">
+    <!-- 左侧标题 -->
+    <text class="title">AI 视觉助手</text>
+
+    <!-- 右侧模式切换 (修复了Picker空白问题) -->
+    <picker bindchange="bindModeChange" range="{{modeArray}}" range-key="name" class="mode-picker">
+      <view class="picker-box">
+        <text class="icon">⚙️</text>
+        <text>{{currentModeName}}</text>
+        <text class="arrow">▼</text>
+      </view>
+    </picker>
+  </view>
+
+  <!-- 中间提示 -->
+  <view class="center-tip">
+    <text>{{guideText}}</text>
+  </view>
+
+  <!-- 底部操作区 -->
+  <view class="bottom-bar">
+    <button class="capture-btn" bindtap="takePhoto">拍摄识别</button>
+  </view>
+</view>

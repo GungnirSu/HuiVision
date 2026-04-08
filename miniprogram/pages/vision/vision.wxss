@@ -1,0 +1,92 @@
+/** 容器占满全屏 **/
+.ui-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* 关键：利用 padding 和 safe-area 避免刘海屏遮挡 */
+  padding-top: var(--status-bar-height);
+  box-sizing: border-box;
+  background-color: transparent;
+}
+
+/** 顶部栏 **/
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  /* 这里的 padding-top 是为了在状态栏下方留出呼吸感 */
+  padding-top: 10px;
+}
+
+.title {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/** 修复 Picker 样式 **/
+.mode-picker {
+  /* 确保点击区域足够大 */
+  padding: 5px 10px;
+}
+
+.picker-box {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(5px);
+  padding: 6px 12px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  color: white;
+  font-size: 14px;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+.picker-box .icon {
+  margin-right: 5px;
+}
+
+.picker-box .arrow {
+  font-size: 10px;
+  margin-left: 8px;
+  opacity: 0.8;
+}
+
+/** 中间提示 **/
+.center-tip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 10px 20px;
+  border-radius: 30px;
+  color: white;
+  font-size: 14px;
+  text-align: center;
+  backdrop-filter: blur(3px);
+}
+
+/** 底部按钮 **/
+.bottom-bar {
+  padding: 30px;
+  padding-bottom: calc(30px + env(safe-area-inset-bottom)); /* 适配底部小黑条 */
+  display: flex;
+  justify-content: center;
+}
+
+.capture-btn {
+  background: linear-gradient(135deg, #007AFF, #0056b3);
+  color: white;
+  width: 100%;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 4px 10px rgba(0, 122, 255, 0.3);
+}
