@@ -1,0 +1,65 @@
+<!-- 1. 全屏相机层（作为整个app的背景） -->
+<camera
+  device-position="back"
+  flash="off"
+  style="width: 100%; height: 100vh; position: fixed; top: 0; left: 0; z-index: 0;"
+></camera>
+
+<!-- 2. 主界面容器 -->
+<view class="container">
+  <!-- 2.1 顶部导航栏 -->
+  <view class="top-bar">
+    <!-- 左侧模式切换 -->
+    <view class="tab-group">
+      <view class="tab-item {{activeMode === 'travel' ? 'tab-active' : ''}}" data-mode="travel" bindtap="switchMode">出行</view>
+      <view class="tab-item {{activeMode === 'vision' ? 'tab-active' : ''}}" data-mode="vision" bindtap="switchMode">会视</view>
+    </view>
+    
+    <!-- 右侧功能按钮（只保留设置） -->
+    <view class="top-right">
+      <view class="top-btn" bindtap="openSetting">⚙️</view>
+    </view>
+  </view>
+
+  <!-- 2.2 实时分析开关（右上角悬浮） -->
+  <view class="switch-wrap">
+    <text class="switch-text">实时分析</text>
+    <switch class="realtime-switch" checked="{{isRealTimeOpen}}" bindchange="switchRealTime" />
+  </view>
+
+  <!-- 2.3 功能按钮区（底部上方） -->
+  <view class="action-buttons">
+    <view class="action-btn quick-btn" bindtap="quickAnalysis">🔍 快速分析</view>
+    <view class="action-btn" wx:if="{{activeMode === 'vision'}}" bindtap="readText">📖 阅读文字</view>
+    <view class="action-btn" wx:if="{{activeMode === 'travel'}}" bindtap="openNavigation">🧭 导航</view>
+  </view>
+
+  <!-- 2.4 对话播报区（中部，半透明） -->
+  <view class="broadcast-area">
+    <!-- 空的对话列表，等待功能实现 -->
+    <view class="message-list">
+      <!-- 功能未实现，暂时为空 -->
+    </view>
+  </view>
+
+  <!-- 2.5 底部交互区 -->
+  <view class="input-bar">
+    <view class="input-container">
+      <view class="input-middle">
+        <input 
+          class="input-field" 
+          placeholder="请输入内容..." 
+          value="{{inputValue}}" 
+          bindinput="bindInput" 
+          bindconfirm="sendMessage"
+        />
+      </view>
+      <view class="input-right">
+        <view class="voice-btn" bindtouchstart="startVoice" bindtouchend="stopVoice">🎤</view>
+      </view>
+    </view>
+    <view class="input-footer">
+      <text class="footer-text">内容由AI生成</text>
+    </view>
+  </view>
+</view>
