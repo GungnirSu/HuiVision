@@ -1,3 +1,5 @@
+const { API_URL } = require('../../envList.js'); // 引入地址
+
 // 主页面逻辑
 Page({
   data: {
@@ -5,7 +7,7 @@ Page({
     isRealTimeOpen: false, // 实时分析开关默认关闭
     inputValue: '' // 输入框内容
   },
-
+  
   // 页面加载
   onLoad() {},
 
@@ -37,9 +39,52 @@ Page({
   },
   
   // 快速分析
+  // 流程是“创建相机控制器 → 拍照 → 成功就拿到图片路径并上传分析，失败就提示用户”。
   quickAnalysis() {
-    console.log('快速分析');
-    // 这里添加快速分析的逻辑
+    const ctx = wx.createCameraContext();
+    ctx.takePhoto({
+      quality: 'normal',
+      success: (res) => {
+        const tempFilePath = res.tempImagePath;
+        this.uploadAndAnalyze(tempFilePath); // 调用上传函数
+      },
+      fail: () => {
+        wx.showToast({ title: '拍照失败', icon: 'none' });
+      }
+    });
+  },
+
+  // 发送图片到后端进行 AI 分析
+  uploadAndAnalyze(filePath) {
+    wx.showLoading({ title: '正在识别...' });
+    
+    wx.uploadFile({
+      url: `${API_URL}/v1/vision/analyze`, // 后端接口路径
+      filePath: filePath,
+      name: 'file', // 后端接收文件的字段名
+      formData: {
+        'mode': this.data.activeMode // 传入当前模式：出行或会视
+      },
+      success: (res) => {
+        //wx.showLoading({ title: '找到后端了...' });
+        const result = JSON.parse(res.data);
+        // 这里处理后端返回的 AI 描述文字
+        console.log('分析结果：', result.description);
+        // 改进：在此处调用语音播报函数将 result.description 读出来
+        wx.showModal({
+          title: '识别结果',
+          content: result.description,
+          showCancel: false
+        });
+      },
+      fail: (err) => {
+        console.error('联调失败：', err);
+        wx.showToast({ title: '网络请求失败', icon: 'none' });
+      },
+      complete: () => {
+        wx.hideLoading();
+      }
+    });
   },
   
   // 打开设置
@@ -71,12 +116,16 @@ Page({
   // 发送消息
   sendMessage() {
     const value = this.data.inputValue.trim();
-    if (value) {
-      console.log('发送消息:', value);
-      // 自动调用快速识别
-      this.quickAnalysis();
-      this.setData({ inputValue: '' });
-    }
+    if (!value) return;
+    wx.request({
+      url: `${API_URL}/api/chat`, // 后端接口路径
+      method: 'POST',
+      data: { query: value, mode: this.data.activeMode },
+      success: (res) => {
+        // 处理对话结果
+        this.setData({ inputValue: '' });
+      }
+    });
   },
   
   // 开始语音
