@@ -66,15 +66,26 @@ Page({
         'mode': this.data.activeMode // 传入当前模式：出行或会视
       },
       success: (res) => {
-        //wx.showLoading({ title: '找到后端了...' });
-        const result = JSON.parse(res.data);
-        // 这里处理后端返回的 AI 描述文字
-        console.log('分析结果：', result.description);
-        // 改进：在此处调用语音播报函数将 result.description 读出来
+        if (res.statusCode !== 200) {
+        wx.showToast({ title: '识别失败', icon: 'none' });
+        return;
+        }
+
+        let resultText = '';
+
+        try {
+        const parsed = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        resultText = parsed.description || parsed.data || JSON.stringify(parsed);
+        } catch (error) {
+        resultText = typeof res.data === 'string' ? res.data : String(res.data);
+        }
+
+        console.log('分析结果：', resultText);
+
         wx.showModal({
-          title: '识别结果',
-          content: result.description,
-          showCancel: false
+        title: '识别结果',
+        content: resultText,
+        showCancel: false
         });
       },
       fail: (err) => {

@@ -1,7 +1,7 @@
 // miniprogram/envList.js
 const envList = [];
 const isMac = false;
-const API_URL = "http://404eaaca.r6.cpolar.cn"; // 新增后端地址配置
+const API_URL = "http://172.16.3.186:8000"; // 后端接口地址
 
 module.exports = {
   envList,

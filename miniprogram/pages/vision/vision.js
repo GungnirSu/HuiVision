@@ -56,12 +56,31 @@ Page({
         console.log('照片路径:', res.tempImagePath);
         // 联调关键：将照片上传至后端
         wx.uploadFile({
-          url: `${API_URL}/api/vision-identify`, // 后端接口路径
+          url: `${API_URL}/api/vision-identify`, // 后端接口路径（兼容返回文本和JSON）
           filePath: res.tempImagePath,
           name: 'image',
           success: (uploadRes) => {
-            wx.showToast({ title: '识别中...', icon: 'loading' });
-            // 处理识别逻辑
+            if (uploadRes.statusCode !== 200) {
+              wx.showToast({ title: '识别失败', icon: 'none' });
+              return;
+            }
+
+            let resultText = '';
+
+            try {
+              const parsed = typeof uploadRes.data === 'string' ? JSON.parse(uploadRes.data) : uploadRes.data;
+              resultText = parsed.description || parsed.data || JSON.stringify(parsed);
+            } catch (error) {
+              resultText = typeof uploadRes.data === 'string' ? uploadRes.data : String(uploadRes.data);
+            }
+
+            console.log('识别结果：', resultText);
+
+            wx.showModal({
+              title: '识别结果',
+              content: resultText,
+              showCancel: false
+            });
           }
         });
       },
