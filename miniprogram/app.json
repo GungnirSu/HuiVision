@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/navigation/navigation",
     "pages/setting/setting"
   ],
   "window": {
@@ -9,6 +10,11 @@
     "navigationBarTitleText": "慧视",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f5f5f5"
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "你的位置信息将用于小程序定位和路线规划"
+    }
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json"

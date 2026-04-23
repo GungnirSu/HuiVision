@@ -1,0 +1,95 @@
+<view class="page">
+  <view class="header">
+    <view class="back-btn" bindtap="backToHome">返回</view>
+    <view class="title">导航</view>
+  </view>
+
+  <view class="search-panel {{searchFocused ? 'expanded' : ''}}">
+    <view class="search-bar">
+      <text class="search-icon">🔍</text>
+      <input
+        class="search-input"
+        placeholder="输入目的地"
+        value="{{destination}}"
+        bindinput="onInputChange"
+        bindfocus="onSearchFocus"
+        bindblur="onSearchBlur"
+        confirm-type="search"
+        bindconfirm="startNavigation"
+      />
+      <view class="search-btn" bindtap="startNavigation">开始</view>
+    </view>
+
+    <view class="location-row">
+      <view class="location-btn" bindtap="openLocation">定位</view>
+      <text class="location-text">{{currentLocationText}}</text>
+    </view>
+
+    <view class="connection-row">
+      <text class="connection-tag">连接状态</text>
+      <text class="connection-text">{{connectionHint}}</text>
+    </view>
+
+    <view wx:if="{{searchFocused}}" class="quick-grid">
+      <block wx:for="{{quickOptions}}" wx:key="id">
+        <view class="quick-item" data-label="{{item.label}}" bindtap="chooseQuickOption">
+          <view class="quick-icon">{{item.icon}}</view>
+          <text class="quick-label">{{item.label}}</text>
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <view class="main-intro-card">
+    <view class="main-step-label">当前导航提示</view>
+    <view class="main-step-text">{{currentStepText}}</view>
+    <view class="main-state-line">
+      <text class="main-state-badge {{isNavigating ? 'active' : ''}}">{{navigationState}}</text>
+      <text class="main-distance">距终点：{{distanceText}}</text>
+    </view>
+  </view>
+
+  <view class="map-card">
+    <map
+      class="nav-map"
+      longitude="{{mapCenterLng}}"
+      latitude="{{mapCenterLat}}"
+      scale="{{scale}}"
+      markers="{{markers}}"
+      polyline="{{polyline}}"
+      show-location="true"
+      enable-3D="true"
+      enable-satellite="false"
+      show-compass="true"
+    />
+    <view class="map-controls">
+      <view class="map-control-btn" bindtap="openLocation">定位到我</view>
+      <view class="map-control-btn secondary" bindtap="initMapCenter">重新居中</view>
+    </view>
+  </view>
+
+  <view class="nav-info-card">
+    <view class="nav-info-row">
+      <text class="nav-info-label">路线长度</text>
+      <text class="nav-info-value">{{routeSummaryText}}</text>
+    </view>
+    <view class="nav-info-row">
+      <text class="nav-info-label">当前步骤</text>
+      <text class="nav-info-value">{{currentStepText}}</text>
+    </view>
+    <view class="nav-info-row">
+      <text class="nav-info-label">连接模式</text>
+      <text class="nav-info-value">{{connectionMode}}</text>
+    </view>
+    <view wx:if="{{arrivedText}}" class="arrived-badge">{{arrivedText}}</view>
+
+    <view wx:if="{{isNavigating}}" class="stop-btn" bindtap="stopNavigation">
+      停止导航
+    </view>
+  </view>
+
+  <view class="coexist-card">
+    <text class="coexist-title">当前协同状态</text>
+    <text class="coexist-desc">导航页打开后，出行模式的基础障碍物检测仍可继续运行，后续可以接入语音播报和路线引导。</text>
+  </view>
+</view>

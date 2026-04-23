@@ -8,6 +8,47 @@
     </view>
   </view>
 
+  <view class="setting-section">
+    <view class="section-title">导航参数</view>
+
+    <view class="setting-item">
+      <view class="setting-info">
+        <text class="setting-title">更新频率</text>
+        <text class="setting-desc">{{navUpdateIntervalSec}} 秒 / 次</text>
+      </view>
+      <slider min="0" max="2" step="1" value="1" bindchange="onIntervalChange" />
+    </view>
+
+    <view class="setting-item">
+      <view class="setting-info">
+        <text class="setting-title">偏航灵敏度</text>
+        <text class="setting-desc">{{navOffRouteThresholdM}} 米</text>
+      </view>
+      <slider min="0" max="2" step="1" value="1" bindchange="onOffRouteChange" />
+    </view>
+
+    <view class="setting-item">
+      <view class="setting-info">
+        <text class="setting-title">到达判定距离</text>
+        <text class="setting-desc">{{navArriveThresholdM}} 米</text>
+      </view>
+      <slider min="0" max="2" step="1" value="1" bindchange="onArriveChange" />
+    </view>
+
+    <view class="setting-item input-item">
+      <view class="setting-info">
+        <text class="setting-title">默认城市</text>
+        <text class="setting-desc">用于目的地搜索和地理编码兜底</text>
+      </view>
+      <input class="city-input" value="{{navDefaultCity}}" placeholder="请输入默认城市" bindinput="onCityInput" />
+    </view>
+
+    <view class="setting-actions">
+      <view class="save-btn" bindtap="saveNavSettings">保存导航设置</view>
+      <view class="reset-btn" bindtap="resetNavSettings">恢复默认</view>
+    </view>
+  </view>
+
   <!-- 设置列表 -->
   <view class="setting-list">
     <!-- 1. 问答对话播报设置 -->

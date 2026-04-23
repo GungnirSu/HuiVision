@@ -1,17 +1,67 @@
 // 设置页面逻辑
-Page({
-  /**
-   * 页面的初始数据
-   */
-  data: {
+const NAV_SETTINGS_KEY = 'huiVisionNavSettings';
+const DEFAULT_NAV_SETTINGS = {
+  navUpdateIntervalSec: 2,
+  navOffRouteThresholdM: 25,
+  navArriveThresholdM: 12,
+  navDefaultCity: '济南'
+};
 
+Page({
+  data: {
+    navUpdateIntervalSec: 2,
+    navOffRouteThresholdM: 25,
+    navArriveThresholdM: 12,
+    navDefaultCity: '济南'
   },
 
-  /**
-   * 生命周期函数--监听页面加载
-   */
-  onLoad(options) {
+  onLoad() {
+    this.loadNavSettings();
+  },
 
+  loadNavSettings() {
+    const saved = wx.getStorageSync(NAV_SETTINGS_KEY) || {};
+    const merged = { ...DEFAULT_NAV_SETTINGS, ...saved };
+    this.setData(merged);
+  },
+
+  saveNavSettings() {
+    const settings = {
+      navUpdateIntervalSec: Number(this.data.navUpdateIntervalSec),
+      navOffRouteThresholdM: Number(this.data.navOffRouteThresholdM),
+      navArriveThresholdM: Number(this.data.navArriveThresholdM),
+      navDefaultCity: this.data.navDefaultCity || DEFAULT_NAV_SETTINGS.navDefaultCity
+    };
+    wx.setStorageSync(NAV_SETTINGS_KEY, settings);
+    wx.showToast({ title: '已保存', icon: 'success' });
+  },
+
+  resetNavSettings() {
+    wx.setStorageSync(NAV_SETTINGS_KEY, DEFAULT_NAV_SETTINGS);
+    this.setData(DEFAULT_NAV_SETTINGS);
+    wx.showToast({ title: '已恢复默认', icon: 'success' });
+  },
+
+  onIntervalChange(e) {
+    const value = Number(e.detail.value);
+    const map = [4, 2, 1];
+    this.setData({ navUpdateIntervalSec: map[value] });
+  },
+
+  onOffRouteChange(e) {
+    const value = Number(e.detail.value);
+    const map = [35, 25, 15];
+    this.setData({ navOffRouteThresholdM: map[value] });
+  },
+
+  onArriveChange(e) {
+    const value = Number(e.detail.value);
+    const map = [15, 12, 8];
+    this.setData({ navArriveThresholdM: map[value] });
+  },
+
+  onCityInput(e) {
+    this.setData({ navDefaultCity: e.detail.value });
   },
 
   // 返回上一页

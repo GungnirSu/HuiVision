@@ -55,10 +55,11 @@ Page({
     // 这里添加阅读文字的逻辑
   },
   
-  // 打开导航设置
+  // 打开导航页面
   openNavigation() {
-    console.log('打开导航设置');
-    // 这里添加导航设置的逻辑
+    wx.navigateTo({
+      url: '../navigation/navigation'
+    });
   },
   
   // 输入框输入
