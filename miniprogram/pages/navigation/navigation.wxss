@@ -27,8 +27,7 @@
 .search-panel,
 .main-intro-card,
 .map-card,
-.nav-info-card,
-.coexist-card {
+.nav-info-card {
   background: #fff;
   border-radius: 24rpx;
   padding: 24rpx;
@@ -242,16 +241,4 @@
   margin-top: 20rpx;
   background: #ff4d4f;
   color: #fff;
-}
-
-.coexist-title {
-  display: block;
-  font-weight: 700;
-  margin-bottom: 12rpx;
-}
-
-.coexist-desc {
-  display: block;
-  color: #667085;
-  line-height: 1.6;
 }

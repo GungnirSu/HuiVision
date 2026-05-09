@@ -163,24 +163,42 @@ class NavigationService:
         nearest = nearest_point_distance_m(lat, lng, points)
         return nearest > threshold
 
+    def _step_polyline_end(self, session: NavigationSession, step_index: int) -> Optional[Tuple[float, float]]:
+        """当前导航段折线终点（高德 lng,lat），用于判断是否走完该段。"""
+        if not session.route_summary or step_index < 0 or step_index >= len(session.route_summary.steps):
+            return None
+        poly = session.route_summary.steps[step_index].polyline
+        if not poly:
+            if step_index == len(session.route_summary.steps) - 1:
+                return (session.destination_lat, session.destination_lng)
+            return self._step_polyline_end(session, step_index + 1)
+        pts = [p for p in poly.split(';') if p]
+        if not pts:
+            return None
+        last = pts[-1]
+        try:
+            lng_str, lat_str = last.split(',')
+            return (float(lat_str), float(lng_str))
+        except ValueError:
+            return None
+
     def _update_step_index(self, session: NavigationSession, lat: float, lng: float) -> int:
-        points = self._route_points(session)
-        if not points or not session.route_summary or not session.route_summary.steps:
+        """按「路线段」推进步骤索引，禁止与折线顶点索引混用，避免静止时步骤乱跳。"""
+        if not session.route_summary or not session.route_summary.steps:
             return 0
 
-        threshold = session.settings.offroute_threshold_m or NAV_OFFROUTE_THRESHOLD_M
-        best_index = session.current_step_index
-        best_distance = float('inf')
+        steps = session.route_summary.steps
+        cur = max(0, min(session.current_step_index, len(steps) - 1))
+        advance_m = min(20, session.settings.arrive_threshold_m or NAV_ARRIVE_THRESHOLD_M)
 
-        for idx in range(session.current_step_index, len(points)):
-            distance = haversine_m(lat, lng, points[idx][0], points[idx][1])
-            if distance < best_distance:
-                best_distance = distance
-                best_index = idx
-            if distance <= threshold:
-                return min(idx + 1, len(session.route_summary.steps) - 1)
+        if cur < len(steps) - 1:
+            end_pt = self._step_polyline_end(session, cur)
+            if end_pt is not None:
+                d = haversine_m(lat, lng, end_pt[0], end_pt[1])
+                if d <= advance_m:
+                    cur += 1
 
-        return best_index
+        return min(cur, len(steps) - 1)
 
     def _current_instruction(self, session: NavigationSession, step_index: int) -> str:
         if not session.route_summary or not session.route_summary.steps:

@@ -7,9 +7,16 @@ const DEFAULT_NAV_SETTINGS = {
   navArriveThresholdM: 12,
   navDefaultCity: '济南'
 };
-// const API_BASE = 'http://10.208.61.154:8000';
-const API_BASE = 'http://10.40.77.154:8000';
-const WS_BASE = 'ws://36.tcp.cpolar.top:13579';
+// 真机请求：须与手机能访问到的地址一致。
+// - 同一热点/WiFi：填电脑 ipconfig 的 IPv4，API_BASE 用 http://该IP:8000，WS_BASE 用 ws://该IP:8000。
+// - cpolar「TCP」隧道（如 tcp://36.tcp.cpolar.top:14908）：只转发原始 TCP，可用于 WebSocket：WS_BASE 写 ws://36.tcp.cpolar.top:14908（端口以控制台为准）。
+//   wx.request 不能用 tcp://，HTTP 接口仍需「HTTP/HTTPS 网站类隧道」得到的 https 地址作 API_BASE，或继续用局域网 http。
+// - 全走穿透且正式校验域名时：API_BASE 用 https 隧道；WS_BASE 用 wss；并在微信公众平台配置 request、socket 合法域名。
+// const API_BASE = 'http://10.40.77.154:8000';
+const API_BASE = 'http://172.23.150.154:8000';
+const WS_BASE = 'ws://172.23.150.154:8000';
+// 仅 WebSocket 走 cpolar TCP 隧道时（与 API_BASE 二选一组合需保证手机都能访问）：
+// const WS_BASE = 'ws://36.tcp.cpolar.top:14908';
 const NAV_WS_PATH = '/api/navigation/ws';
 
 const quickOptions = [
@@ -21,6 +28,17 @@ const quickOptions = [
 
 const DEFAULT_LOCATION = { latitude: 36.6684, longitude: 117.1414 };
 
+/** 步行导航视野：与 map 组件 min-scale / max-scale 一致 */
+const MAP_SCALE_MIN = 16;
+const MAP_SCALE_MAX = 18;
+const MAP_SCALE_DEFAULT = 17;
+
+function clampMapScale(s) {
+  const n = Number(s);
+  if (Number.isNaN(n)) return MAP_SCALE_DEFAULT;
+  return Math.max(MAP_SCALE_MIN, Math.min(MAP_SCALE_MAX, Math.round(n)));
+}
+
 function navLog(step, data) {
   if (!DEBUG_NAV) return;
   if (typeof data === 'undefined') {
@@ -30,12 +48,117 @@ function navLog(step, data) {
   console.log(`[NAV DEBUG] ${step}`, data);
 }
 
-function decodePolyline(polyline) {
-  if (!polyline) return [];
-  return polyline.split(';').map((item) => {
-    const [lng, lat] = item.split(',').map(Number);
-    return { latitude: lat, longitude: lng };
-  }).filter((pt) => !Number.isNaN(pt.latitude) && !Number.isNaN(pt.longitude));
+/** 上报位置：相对上次上报位移不足则跳过（米） */
+const LOCATION_REPORT_MIN_M = 5;
+const ROUTE_BLUE = '#007AFF';
+const ROUTE_BLUE_DIM = '#8CB4FF';
+const ROUTE_GRAY_DONE = '#CFD8DC';
+const WS_OPEN_TIMEOUT_MS = 12000;
+const WS_MAX_ATTEMPTS = 3;
+const WS_RETRY_GAP_MS = 2000;
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLng = toR(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function normalizeRoutePoints(routePoints) {
+  if (!Array.isArray(routePoints)) return [];
+  const out = [];
+  routePoints.forEach((pt) => {
+    const lat = typeof pt.lat === 'number' ? pt.lat : pt.latitude;
+    const lng = typeof pt.lng === 'number' ? pt.lng : pt.longitude;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || Number.isNaN(lat) || Number.isNaN(lng)) {
+      return;
+    }
+    out.push({ latitude: lat, longitude: lng });
+  });
+  return out;
+}
+
+/** 高德步行段 polyline：lng,lat;lng,lat */
+function decodeAmapPolyline(poly) {
+  if (!poly || typeof poly !== 'string') return [];
+  const out = [];
+  poly.split(';').forEach((item) => {
+    const parts = item.split(',');
+    if (parts.length < 2) return;
+    const lng = Number(parts[0]);
+    const lat = Number(parts[1]);
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      out.push({ latitude: lat, longitude: lng });
+    }
+  });
+  return out;
+}
+
+function buildNavigationPolylines(state) {
+  const navigating = state.is_navigating !== false;
+  if (!navigating) return [];
+
+  const rs = state.route_summary;
+  if (rs && Array.isArray(rs.steps) && rs.steps.length > 0) {
+    const cur = Math.max(0, Math.min(Number(state.current_step_index) || 0, rs.steps.length - 1));
+    const lines = [];
+    rs.steps.forEach((step, i) => {
+      const pts = decodeAmapPolyline(step.polyline);
+      if (pts.length < 2) return;
+      if (i < cur) {
+        lines.push({
+          points: pts,
+          color: ROUTE_GRAY_DONE,
+          width: 5,
+          arrowLine: false,
+          borderColor: '#ECEFF1',
+          borderWidth: 1,
+          level: 'aboveroads',
+        });
+      } else if (i === cur) {
+        lines.push({
+          points: pts,
+          color: ROUTE_BLUE,
+          width: 9,
+          arrowLine: true,
+          borderColor: '#FFFFFF',
+          borderWidth: 2,
+          level: 'aboveroads',
+        });
+      } else {
+        lines.push({
+          points: pts,
+          color: ROUTE_BLUE_DIM,
+          width: 7,
+          arrowLine: true,
+          borderColor: '#FFFFFF',
+          borderWidth: 1,
+          level: 'aboveroads',
+        });
+      }
+    });
+    if (lines.length) return lines;
+  }
+
+  const mapPoints = normalizeRoutePoints(state.route_points || []);
+  if (mapPoints.length > 1) {
+    return [
+      {
+        points: mapPoints,
+        color: state.is_off_route ? '#c2410c' : ROUTE_BLUE,
+        width: 9,
+        arrowLine: true,
+        borderColor: '#FFFFFF',
+        borderWidth: 2,
+        level: 'aboveroads',
+      },
+    ];
+  }
+  return [];
 }
 
 Page({
@@ -56,7 +179,7 @@ Page({
     mapCenterLng: DEFAULT_LOCATION.longitude,
     mapLatitude: DEFAULT_LOCATION.latitude,
     mapLongitude: DEFAULT_LOCATION.longitude,
-    scale: 16,
+    scale: MAP_SCALE_DEFAULT,
     markers: [],
     polyline: [],
     routeSummaryText: '等待开始导航',
@@ -144,55 +267,87 @@ Page({
       mapCenterLng: longitude,
       mapLatitude: latitude,
       mapLongitude: longitude,
+      scale: clampMapScale(this.data.scale),
     });
     navLog(`setMapLocation - ${source}`, { latitude, longitude });
   },
 
-  renderRoute(state) {
-    const routeSummary = state.route_summary || {};
-    const markers = Array.isArray(state.markers) ? state.markers.map((marker) => ({
-      id: marker.id,
-      latitude: marker.latitude,
-      longitude: marker.longitude,
-      width: marker.width || 24,
-      height: marker.height || 24,
-      iconPath: marker.iconPath,
-      callout: marker.title ? {
-        content: marker.title,
-        display: 'BYCLICK',
-        padding: 6,
-        borderRadius: 8,
-        bgColor: '#ffffff',
-        color: '#1f2937'
-      } : undefined
-    })) : [];
+  onMapRegionChange(e) {
+    const d = e.detail || {};
+    if (d.type !== 'end') return;
+    const inner = d.detail || d;
+    const s = typeof inner.scale === 'number' ? inner.scale : d.scale;
+    if (typeof s !== 'number' || Number.isNaN(s)) return;
+    const next = clampMapScale(s);
+    if (next !== this.data.scale) {
+      this.setData({ scale: next });
+    }
+  },
 
-    const polyline = [];
-    const routePoints = Array.isArray(state.route_points) ? state.route_points : [];
-    if (routePoints.length > 1) {
-      polyline.push({
-        points: routePoints.map((pt) => ({ latitude: pt.lat, longitude: pt.lng })),
-        color: '#1677ff',
-        width: 6,
-        arrowLine: true,
-        borderColor: '#ffffff',
-        borderWidth: 2
-      });
+  renderRoute(state) {
+    this.applyNavigationFromServer(state, {});
+  },
+
+  /**
+   * 根据后端导航状态更新地图与文案；文案仅在内容变化时 setData，减少无意义刷新。
+   */
+  applyNavigationFromServer(state, opts) {
+    const skipMapCenter = opts.skipMapCenter === true;
+    const routeSummary = state.route_summary || {};
+    const markers = Array.isArray(state.markers)
+      ? state.markers.map((marker) => ({
+        id: marker.id,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+        width: marker.width || 24,
+        height: marker.height || 24,
+        iconPath: marker.iconPath,
+        callout: marker.title
+          ? {
+            content: marker.title,
+            display: 'BYCLICK',
+            padding: 6,
+            borderRadius: 8,
+            bgColor: '#ffffff',
+            color: '#1f2937',
+          }
+          : undefined,
+      }))
+      : [];
+
+    const polyline = buildNavigationPolylines(state);
+    const stepText = state.current_instruction || '导航中';
+    const summaryText = routeSummary.distance_m
+      ? `路线距离 ${Math.round(routeSummary.distance_m)} 米`
+      : '路线已生成';
+    const distStr =
+      typeof state.distance_to_destination_m === 'number'
+        ? `${Math.round(state.distance_to_destination_m)} 米`
+        : '--';
+    const navState = state.arrived ? '已到达目的地' : state.is_off_route ? '已偏航' : '导航中';
+    const arrivedText = state.arrived ? '已到达目的地' : '';
+    const hint = state.current_instruction || this.data.routeHint;
+
+    const patch = { markers, polyline, routeSummaryText: summaryText };
+    if (stepText !== this.data.currentStepText) {
+      patch.currentStepText = stepText;
+    }
+    if (distStr !== this.data.distanceText) {
+      patch.distanceText = distStr;
+    }
+    if (navState !== this.data.navigationState) {
+      patch.navigationState = navState;
+    }
+    if (hint !== this.data.routeHint) {
+      patch.routeHint = hint;
+    }
+    if (arrivedText !== this.data.arrivedText) {
+      patch.arrivedText = arrivedText;
     }
 
-    const stepText = state.current_instruction || '导航中';
-    const summaryText = routeSummary.distance_m ? `路线距离 ${Math.round(routeSummary.distance_m)} 米` : '路线已生成';
+    this.setData(patch);
 
-    this.setData({
-      markers,
-      polyline,
-      routeSummaryText: summaryText,
-      distanceText: typeof state.distance_to_destination_m === 'number' ? `${Math.round(state.distance_to_destination_m)} 米` : '--',
-      currentStepText: stepText,
-      arrivedText: state.arrived ? '已到达目的地' : ''
-    });
-
-    if (state.current_lat && state.current_lng) {
+    if (!skipMapCenter && state.current_lat && state.current_lng) {
       this.setMapLocation(state.current_lat, state.current_lng, 'state');
     }
   },
@@ -287,9 +442,12 @@ Page({
               currentLocationText: `当前位置：${res.latitude.toFixed(6)}, ${res.longitude.toFixed(6)}`,
               connectionHint: '正在尝试 WebSocket 连接...',
               connectionMode: 'ws',
-              wsConnected: false
+              wsConnected: false,
+              scale: MAP_SCALE_DEFAULT,
             });
 
+            this._lastReportedLat = res.latitude;
+            this._lastReportedLng = res.longitude;
             this.renderRoute(data);
             navLog('startNavigation - 已保存 sessionId', data.session_id);
 
@@ -315,100 +473,140 @@ Page({
       navLog('tryConnectWebSocket - sessionId 为空，跳过');
       return;
     }
+    this._cancelWebSocketTimers();
+    this._openWebSocketAttempt(sessionId, 0);
+  },
 
-    navLog('tryConnectWebSocket - 准备连接', {
-      sessionId,
-      wsUrl: `${WS_BASE}${NAV_WS_PATH}?session_id=${sessionId}`
-    });
+  _cancelWebSocketTimers() {
+    if (this._wsOpenTimer) {
+      clearTimeout(this._wsOpenTimer);
+      this._wsOpenTimer = null;
+    }
+    if (this._wsRetryTimer) {
+      clearTimeout(this._wsRetryTimer);
+      this._wsRetryTimer = null;
+    }
+    if (this.wsOpenTimeout) {
+      clearTimeout(this.wsOpenTimeout);
+      this.wsOpenTimeout = null;
+    }
+  },
 
-    this.setData({
-      connectionMode: 'ws',
-      connectionHint: '正在尝试 WebSocket 连接...',
-      wsConnected: false
-    });
-
-    this.closeWebSocket();
-    const wsUrl = `${WS_BASE}${NAV_WS_PATH}?session_id=${sessionId}`;
-
-    try {
-      this.ws = wx.connectSocket({ url: wsUrl });
-    } catch (error) {
-      navLog('tryConnectWebSocket - wx.connectSocket 直接报错', error);
-      this.switchToPolling('WebSocket 创建失败，已切换轮询');
+  _openWebSocketAttempt(sessionId, attemptIndex) {
+    if (!sessionId || sessionId !== this.data.sessionId || !this.data.isNavigating) {
       return;
     }
 
-    this.wsOpenTimeout = setTimeout(() => {
-      navLog('tryConnectWebSocket - WebSocket 超时，切换轮询');
-      this.switchToPolling('WebSocket 连接超时，已切换轮询');
-    }, 5000);
+    this.closeWebSocket();
 
-    this.ws.onOpen(() => {
+    const wsUrl = `${WS_BASE}${NAV_WS_PATH}?session_id=${encodeURIComponent(sessionId)}`;
+    navLog('tryConnectWebSocket - 尝试连接', { attemptIndex: attemptIndex + 1, wsUrl });
+
+    this.setData({
+      connectionMode: 'ws',
+      connectionHint: `正在连接 WebSocket (${attemptIndex + 1}/${WS_MAX_ATTEMPTS})...`,
+      wsConnected: false,
+    });
+
+    let socketTask;
+    try {
+      socketTask = wx.connectSocket({ url: wsUrl });
+      this.ws = socketTask;
+    } catch (error) {
+      navLog('tryConnectWebSocket - wx.connectSocket 异常', error);
+      this._onWebSocketAttemptFailed(sessionId, attemptIndex);
+      return;
+    }
+
+    this._wsOpenTimer = setTimeout(() => {
+      this._wsOpenTimer = null;
+      navLog('tryConnectWebSocket - 连接超时', { attemptIndex });
+      this.closeWebSocket();
+      this._onWebSocketAttemptFailed(sessionId, attemptIndex);
+    }, WS_OPEN_TIMEOUT_MS);
+
+    socketTask.onOpen(() => {
       navLog('WebSocket onOpen - 连接成功');
-      if (this.wsOpenTimeout) {
-        clearTimeout(this.wsOpenTimeout);
-        this.wsOpenTimeout = null;
+      if (this._wsOpenTimer) {
+        clearTimeout(this._wsOpenTimer);
+        this._wsOpenTimer = null;
       }
       this.setData({
         wsConnected: true,
         connectionMode: 'ws',
-        connectionHint: 'WebSocket 已连接'
+        connectionHint: 'WebSocket 已连接',
       });
       this.stopFallbackPolling();
     });
 
-    this.ws.onMessage((res) => {
-      navLog('WebSocket onMessage - 收到消息', res.data);
-
+    socketTask.onMessage((res) => {
       try {
         const msg = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-        navLog('WebSocket onMessage - 解析后消息', msg);
-
         const payload = msg.payload || {};
-        if (payload.current_instruction) {
-          this.setData({
-            routeHint: payload.current_instruction,
-            navigationState: payload.arrived ? '已到达目的地' : (payload.is_off_route ? '已偏航' : '导航中')
-          });
+        if (payload && (payload.session_id || payload.route_points || payload.current_instruction !== undefined)) {
+          this.applyNavigationFromServer(payload, {});
         }
-
         if (payload.arrived) {
-          navLog('WebSocket onMessage - 已到达目的地');
           this.stopNavigation(true);
         }
       } catch (e) {
-        navLog('WebSocket onMessage - 消息解析失败', e);
+        navLog('WebSocket onMessage - 解析失败', e);
       }
     });
 
-    this.ws.onError((err) => {
-      navLog('WebSocket onError - 连接失败', err);
-      if (this.wsOpenTimeout) {
-        clearTimeout(this.wsOpenTimeout);
-        this.wsOpenTimeout = null;
+    socketTask.onError((err) => {
+      navLog('WebSocket onError', err);
+      if (this._wsOpenTimer) {
+        clearTimeout(this._wsOpenTimer);
+        this._wsOpenTimer = null;
       }
-      this.switchToPolling('WebSocket 连接失败，已切换轮询');
+      this.closeWebSocket();
+      this._onWebSocketAttemptFailed(sessionId, attemptIndex);
     });
 
-    this.ws.onClose(() => {
-      navLog('WebSocket onClose - 连接关闭');
-      if (this.wsOpenTimeout) {
-        clearTimeout(this.wsOpenTimeout);
-        this.wsOpenTimeout = null;
+    socketTask.onClose(() => {
+      navLog('WebSocket onClose');
+      if (this._wsManualClose) {
+        this._wsManualClose = false;
+        return;
       }
-      if (this.data.connectionMode === 'ws' && this.data.isNavigating) {
+      if (this._wsOpenTimer) {
+        clearTimeout(this._wsOpenTimer);
+        this._wsOpenTimer = null;
+      }
+      const hadBeenOpen = this.data.wsConnected;
+      this.setData({ wsConnected: false });
+      if (hadBeenOpen && this.data.connectionMode === 'ws' && this.data.isNavigating) {
         this.switchToPolling('WebSocket 已断开，已切换轮询');
       }
-      this.setData({ wsConnected: false });
     });
+  },
+
+  _onWebSocketAttemptFailed(sessionId, attemptIndex) {
+    if (!this.data.isNavigating || sessionId !== this.data.sessionId) {
+      return;
+    }
+    if (this.data.wsConnected) {
+      return;
+    }
+    if (attemptIndex < WS_MAX_ATTEMPTS - 1) {
+      this._wsRetryTimer = setTimeout(() => {
+        this._wsRetryTimer = null;
+        this._openWebSocketAttempt(sessionId, attemptIndex + 1);
+      }, WS_RETRY_GAP_MS);
+    } else {
+      this.switchToPolling('WebSocket 连接失败，已切换轮询');
+    }
   },
 
   switchToPolling(hint) {
     navLog('switchToPolling - 切换轮询', hint);
+    this._cancelWebSocketTimers();
     this.closeWebSocket();
     this.setData({
       connectionMode: 'polling',
-      connectionHint: hint || '当前使用轮询模式'
+      connectionHint: hint || '当前使用轮询模式',
+      wsConnected: false,
     });
     this.startFallbackPolling();
   },
@@ -454,18 +652,17 @@ Page({
   },
 
   closeWebSocket() {
-    if (this.wsOpenTimeout) {
-      clearTimeout(this.wsOpenTimeout);
-      this.wsOpenTimeout = null;
-    }
+    this._cancelWebSocketTimers();
     if (this.ws) {
       navLog('closeWebSocket - 关闭WS');
+      this._wsManualClose = true;
+      const w = this.ws;
+      this.ws = null;
       try {
-        this.ws.close();
+        w.close({});
       } catch (e) {
         navLog('closeWebSocket - 关闭失败', e);
       }
-      this.ws = null;
     }
   },
 
@@ -500,6 +697,20 @@ Page({
       return;
     }
 
+    if (
+      this._lastReportedLat != null &&
+      this._lastReportedLng != null
+    ) {
+      const moved = haversineM(lat, lng, this._lastReportedLat, this._lastReportedLng);
+      if (moved < LOCATION_REPORT_MIN_M) {
+        navLog('updateLocation - 位移不足，跳过上报', { movedM: moved });
+        return;
+      }
+    }
+
+    this._lastReportedLat = lat;
+    this._lastReportedLng = lng;
+
     const payload = {
       session_id: this.data.sessionId,
       lat,
@@ -519,11 +730,7 @@ Page({
         const data = resp.data?.data;
         if (!data) return;
 
-        this.setData({
-          routeHint: data.current_instruction || this.data.routeHint,
-          navigationState: data.arrived ? '已到达目的地' : (data.is_off_route ? '已偏航' : '导航中')
-        });
-        this.renderRoute(data);
+        this.applyNavigationFromServer(data, {});
 
         navLog('updateLocation - 页面更新成功', {
           currentInstruction: data.current_instruction,
@@ -563,11 +770,7 @@ Page({
           return;
         }
 
-        this.setData({
-          routeHint: data.current_instruction || this.data.routeHint,
-          navigationState: data.arrived ? '已到达目的地' : (data.is_off_route ? '已偏航' : '导航中')
-        });
-        this.renderRoute(data);
+        this.applyNavigationFromServer(data, { skipMapCenter: true });
 
         navLog('queryNavigationStatus - 页面更新成功', {
           currentInstruction: data.current_instruction,
@@ -595,7 +798,10 @@ Page({
 
     this.stopLocationTimer();
     this.stopFallbackPolling();
+    this._cancelWebSocketTimers();
     this.closeWebSocket();
+    this._lastReportedLat = null;
+    this._lastReportedLng = null;
 
     if (this.data.sessionId) {
       wx.request({

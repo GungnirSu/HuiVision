@@ -25,8 +25,8 @@
       <text class="location-text">{{currentLocationText}}</text>
     </view>
 
-    <view class="connection-row">
-      <text class="connection-tag">连接状态</text>
+    <view wx:if="{{isNavigating}}" class="connection-row">
+      <text class="connection-tag">状态</text>
       <text class="connection-text">{{connectionHint}}</text>
     </view>
 
@@ -51,16 +51,28 @@
 
   <view class="map-card">
     <map
+      id="navMap"
       class="nav-map"
       longitude="{{mapCenterLng}}"
       latitude="{{mapCenterLat}}"
       scale="{{scale}}"
+      min-scale="{{16}}"
+      max-scale="{{18}}"
       markers="{{markers}}"
       polyline="{{polyline}}"
-      show-location="true"
-      enable-3D="true"
-      enable-satellite="false"
-      show-compass="true"
+      show-location="{{true}}"
+      enable-zoom="{{true}}"
+      enable-scroll="{{true}}"
+      enable-rotate="{{false}}"
+      enable-3D="{{false}}"
+      enable-overlooking="{{false}}"
+      enable-satellite="{{false}}"
+      enable-traffic="{{false}}"
+      enable-poi="{{true}}"
+      skew="{{0}}"
+      show-compass="{{true}}"
+      show-scale="{{true}}"
+      bindregionchange="onMapRegionChange"
     />
     <view class="map-controls">
       <view class="map-control-btn" bindtap="openLocation">定位到我</view>
@@ -77,19 +89,10 @@
       <text class="nav-info-label">当前步骤</text>
       <text class="nav-info-value">{{currentStepText}}</text>
     </view>
-    <view class="nav-info-row">
-      <text class="nav-info-label">连接模式</text>
-      <text class="nav-info-value">{{connectionMode}}</text>
-    </view>
     <view wx:if="{{arrivedText}}" class="arrived-badge">{{arrivedText}}</view>
 
     <view wx:if="{{isNavigating}}" class="stop-btn" bindtap="stopNavigation">
       停止导航
     </view>
-  </view>
-
-  <view class="coexist-card">
-    <text class="coexist-title">当前协同状态</text>
-    <text class="coexist-desc">导航页打开后，出行模式的基础障碍物检测仍可继续运行，后续可以接入语音播报和路线引导。</text>
   </view>
 </view>
